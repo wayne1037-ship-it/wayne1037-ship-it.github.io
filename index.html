@@ -173,6 +173,8 @@
       margin: 22px 28px 0;
     }
     .option {
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
       padding: 18px 22px;
       border: 1px solid var(--line);
       background: rgba(255,255,255,.02);
@@ -294,7 +296,12 @@
       font-size: .88rem;
       letter-spacing: .08em;
       text-transform: uppercase;
-      margin-bottom: 10px;
+      margin-bottom: 4px;
+    }
+    .all-words-subtitle {
+      color: var(--muted);
+      font-size: .82rem;
+      margin-bottom: 12px;
     }
     .all-words-grid {
       display: grid;
@@ -311,6 +318,60 @@
       padding: 7px 9px;
       font-size: .88rem;
       line-height: 1.3;
+      cursor: pointer;
+      text-align: left;
+      font-family: "Times New Roman", Times, serif;
+    }
+    .all-word-chip:hover,
+    .all-word-chip.active {
+      border-color: var(--accent);
+      background: rgba(240, 201, 74, .08);
+      color: var(--accent);
+    }
+    .all-word-detail {
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.03);
+      padding: 14px 14px 12px;
+      min-height: 120px;
+    }
+    .all-word-detail.empty {
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    .detail-word {
+      font-size: 1.24rem;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .detail-meta {
+      display: grid;
+      gap: 8px;
+      font-size: .94rem;
+      line-height: 1.6;
+    }
+    .detail-label {
+      color: var(--muted);
+      margin-right: 8px;
+      min-width: 84px;
+      display: inline-block;
+    }
+    .detail-example {
+      margin-top: 6px;
+      padding-top: 8px;
+      border-top: 1px dashed rgba(240, 201, 74, .22);
+    }
+    .detail-example-en {
+      color: var(--text);
+      line-height: 1.7;
+    }
+    .detail-example-zh {
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.7;
     }
     .side-note {
       margin-top: 18px;
@@ -349,9 +410,9 @@
           <div class="score-pill" id="scorePill">0</div>
         </div>
         <div class="controls">
-          <button class="btn" id="shuffleBtn">Shuffle Set</button>
-          <button class="btn" id="reviewBtn">Review Missed</button>
-          <button class="btn" id="nextBtn">Next</button>
+          <button class="btn" id="shuffleBtn" type="button">Shuffle Set</button>
+          <button class="btn" id="reviewBtn" type="button">Review Missed</button>
+          <button class="btn" id="nextBtn" type="button">Next</button>
         </div>
       </div>
 
@@ -377,7 +438,9 @@
       <div class="word-list" id="wordList"></div>
       <div class="all-words-panel" id="allWordsPanel">
         <div class="all-words-title">Full vocabulary list</div>
+        <div class="all-words-subtitle">點單字可查看完整資訊</div>
         <div class="all-words-grid" id="allWordsGrid"></div>
+        <div class="all-word-detail" id="allWordDetail"></div>
       </div>
       <div class="side-note">
         快捷鍵：1 到 4 作答，Enter 或 N 下一題。<br />
@@ -416,6 +479,7 @@
       allWordsBtn: document.getElementById("allWordsBtn"),
       allWordsPanel: document.getElementById("allWordsPanel"),
       allWordsGrid: document.getElementById("allWordsGrid"),
+      allWordDetail: document.getElementById("allWordDetail"),
       wordList: document.getElementById("wordList"),
       sideStats: document.getElementById("sideStats"),
     };
@@ -427,6 +491,7 @@
       answered: {},
       orderSeed: Date.now(),
       showAllWords: false,
+      selectedAllWord: null,
       sets: {}
     };
 
@@ -525,7 +590,7 @@
     }
 
     function renderTabs() {
-      els.tabs.innerHTML = tabs.map(tab => `<button class="tab ${tab.id === state.currentTab ? "active" : ""}" data-tab="${tab.id}">${tab.label}</button>`).join("");
+      els.tabs.innerHTML = tabs.map(tab => `<button class="tab ${tab.id === state.currentTab ? "active" : ""}" data-tab="${tab.id}" type="button">${tab.label}</button>`).join("");
       els.tabs.querySelectorAll(".tab").forEach(btn => {
         btn.addEventListener("click", () => {
           state.currentTab = btn.dataset.tab;
@@ -552,7 +617,7 @@
       els.wordList.innerHTML = set.map(item => {
         const status = state.answered[item.word] || {};
         const dotClass = status.correct ? "dot done" : status.missed ? "dot miss" : "dot";
-        return `<button class="word-item ${item.word === activeWord ? "active" : ""}" data-word="${esc(item.word)}"><span>${esc(item.word)}</span><span class="${dotClass}"></span></button>`;
+        return `<button class="word-item ${item.word === activeWord ? "active" : ""}" data-word="${esc(item.word)}" type="button"><span>${esc(item.word)}</span><span class="${dotClass}"></span></button>`;
       }).join("");
       els.wordList.querySelectorAll(".word-item").forEach((btn, idx) => {
         btn.addEventListener("click", () => {
@@ -564,11 +629,60 @@
     }
 
 
+    function renderAllWordDetail(item) {
+      if (!item) {
+        els.allWordDetail.className = "all-word-detail empty";
+        els.allWordDetail.innerHTML = "點上方任一單字，即可查看例句、中文、詞性與 collocation。";
+        return;
+      }
+      els.allWordDetail.className = "all-word-detail";
+      els.allWordDetail.innerHTML = `
+        <div class="detail-word">${esc(item.word)}</div>
+        <div class="detail-meta">
+          <div><span class="detail-label">詞性</span>${esc(item.pos || "—")}</div>
+          <div><span class="detail-label">中文</span>${esc(item.meaning || "—")}</div>
+          <div><span class="detail-label">Collocation</span>${esc(item.collocation || "—")}</div>
+          <div class="detail-example">
+            <div class="detail-example-en"><span class="detail-label">Example</span>${esc(item.example || "—")}</div>
+            <div class="detail-example-zh"><span class="detail-label">中文句子</span>${esc(item.translation || "—")}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function preserveViewport(callback) {
+      const y = window.scrollY;
+      const x = window.scrollX;
+      const active = document.activeElement;
+      if (active && typeof active.blur === "function") active.blur();
+      callback();
+      requestAnimationFrame(() => window.scrollTo(x, y));
+    }
+
+    function safeClick(handler) {
+      return (event) => {
+        if (event) event.preventDefault();
+        preserveViewport(handler);
+      };
+    }
+
     function renderAllWords() {
       els.allWordsBtn.classList.toggle("active", Boolean(state.showAllWords));
       els.allWordsPanel.classList.toggle("show", Boolean(state.showAllWords));
       if (!state.showAllWords) return;
-      els.allWordsGrid.innerHTML = RAW_DATA.map(item => `<div class="all-word-chip">${esc(item.word)}</div>`).join("");
+      const selected = RAW_DATA.find(item => item.word === state.selectedAllWord) || RAW_DATA[0] || null;
+      if (selected && !state.selectedAllWord) state.selectedAllWord = selected.word;
+      els.allWordsGrid.innerHTML = RAW_DATA.map(item => `
+        <button class="all-word-chip ${item.word === (selected && selected.word) ? "active" : ""}" data-word="${esc(item.word)}" type="button">${esc(item.word)}</button>
+      `).join("");
+      els.allWordsGrid.querySelectorAll(".all-word-chip").forEach((btn) => {
+        btn.addEventListener("click", safeClick(() => {
+          state.selectedAllWord = btn.dataset.word;
+          saveState();
+          renderAllWords();
+        }));
+      });
+      renderAllWordDetail(selected);
     }
 
     function lockAnswered() {
@@ -641,11 +755,11 @@
           if (option === item.word) cls += " correct";
           else if (option === state.answered[item.word]?.chosen) cls += " wrong";
         }
-        return `<button class="${cls}" data-option="${esc(option)}" ${answered ? "disabled" : ""}><span style="opacity:.6;margin-right:10px">${idx + 1}.</span>${esc(option)}</button>`;
+        return `<button class="${cls}" data-option="${esc(option)}" type="button" ${answered ? "disabled" : ""}><span style="opacity:.6;margin-right:10px">${idx + 1}.</span>${esc(option)}</button>`;
       }).join("");
 
       els.options.querySelectorAll(".option").forEach(btn => {
-        btn.addEventListener("click", () => answerQuestion(btn.dataset.option));
+        btn.addEventListener("click", safeClick(() => answerQuestion(btn.dataset.option)));
       });
 
       els.feedback.innerHTML = feedbackHtml(item);
@@ -670,27 +784,30 @@
       renderAllWords();
     }
 
-    els.nextBtn.addEventListener("click", nextQuestion);
-    els.shuffleBtn.addEventListener("click", () => rebuildSet(state.currentTab));
-    els.reviewBtn.addEventListener("click", () => {
+    els.nextBtn.addEventListener("click", safeClick(nextQuestion));
+    els.shuffleBtn.addEventListener("click", safeClick(() => rebuildSet(state.currentTab)));
+    els.reviewBtn.addEventListener("click", safeClick(() => {
       state.currentTab = "review";
       state.currentIndex = 0;
       rebuildSet("review");
-    });
-    els.allWordsBtn.addEventListener("click", () => {
+    }));
+    els.allWordsBtn.addEventListener("click", safeClick(() => {
       state.showAllWords = !state.showAllWords;
+      if (state.showAllWords && !state.selectedAllWord && RAW_DATA.length) {
+        state.selectedAllWord = RAW_DATA[0].word;
+      }
       saveState();
       renderAllWords();
-    });
+    }));
 
     window.addEventListener("keydown", (e) => {
       if (["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
       if (/^[1-4]$/.test(e.key)) {
         const idx = Number(e.key) - 1;
-        if (currentOptions[idx]) answerQuestion(currentOptions[idx]);
+        if (currentOptions[idx]) preserveViewport(() => answerQuestion(currentOptions[idx]));
       }
       if (e.key === "Enter" || e.key.toLowerCase() === "n") {
-        nextQuestion();
+        preserveViewport(nextQuestion);
       }
     });
 
